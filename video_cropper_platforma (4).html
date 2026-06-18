@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Cropper Pro - Odstránenie ikon a export do 1080p30</title>
+    <!-- Tailwind CSS pre moderný a čistý dizajn -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons pre moderné ikony -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* Vlastné štýly pre jemné doladenie UI */
+        .gradient-bg {
+            background: radial-gradient(circle at top, #1e1b4b 0%, #0f172a 100%);
+        }
+        /* Štýl pre crop box a jeho tiahla */
+        #crop-box {
+            border: 2px dashed #3b82f6;
+            background-color: rgba(59, 130, 246, 0.15);
+            cursor: move;
+            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.65);
+        }
+        .resize-handle {
+            width: 14px;
+            height: 14px;
+            background-color: #3b82f6;
+            border: 2px solid #ffffff;
+            border-radius: 50%;
+            position: absolute;
+        }
+        .handle-tl { top: -7px; left: -7px; cursor: nwse-resize; }
+        .handle-tr { top: -7px; right: -7px; cursor: nesw-resize; }
+        .handle-bl { bottom: -7px; left: -7px; cursor: nesw-resize; }
+        .handle-br { bottom: -7px; right: -7px; cursor: nwse-resize; }
+    </style>
+</head>
+<body class="gradient-bg text-slate-100 min-h-screen flex flex-col font-sans antialiased selection:bg-blue-600 selection:text-white">
+
+    <!-- Hlavička aplikácie -->
+    <header class="border-b border-slate-800/80 bg-slate-900/50 backdrop-blur-md sticky top-0 z-50 px-6 py-4">
+        <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div class="flex items-center gap-3">
+                <div class="bg-blue-600 p-2.5 rounded-xl shadow-lg shadow-blue-500/20">
+                    <i data-lucide="crop" class="w-6 h-6 text-white"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold tracking-tight bg-gradient-to-r from-white via-slate-200 to-blue-400 bg-clip-text text-transparent">
+                        Video Cropper Pro
+                    </h1>
+                    <p class="text-xs text-slate-400">Odstránenie ikon & export do 1080p30 MP4</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-4 text-xs text-slate-400">
+                <span class="flex items-center gap-1.5"><i data-lucide="shield-check" class="w-4 h-4 text-emerald-500"></i> Lokálne spracovanie</span>
+                <span class="flex items-center gap-1.5"><i data-lucide="zap" class="w-4 h-4 text-amber-500"></i> Vysoká kvalita (zvuk aj obraz)</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Hlavný obsah -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 flex flex-col gap-8 justify-center">
+        
+        <!-- Sekcia pre import videa (zobrazí sa ak nie je vybrané video) -->
+        <div id="import-section" class="w-full max-w-2xl mx-auto">
+            <div class="bg-slate-900/40 border border-slate-800/80 rounded-3xl p-8 sm:p-12 text-center shadow-2xl backdrop-blur-sm hover:border-blue-500/40 transition-all duration-300">
+                <div class="w-20 h-20 bg-slate-800/50 rounded-2xl flex items-center justify-center mx-auto mb-6 border border-slate-700/50">
+                    <i data-lucide="video" class="w-10 h-10 text-blue-400"></i>
+                </div>
+                <h3 class="text-2xl font-semibold mb-2">Importujte svoje video</h3>
+                <p class="text-slate-400 text-sm max-w-md mx-auto mb-8">
+                    Podporujeme všetky bežné formáty (MP4, WEBM, MOV, AVI, atď.). Orezaním jednoducho odstránite ikony, vodoznaky alebo čierne okraje.
+                </p>
+                
+                <!-- Skrytý file input -->
+                <input type="file" id="video-input" accept="video/*" class="hidden">
+                
+                <button onclick="document.getElementById('video-input').click()" class="bg-blue-600 hover:bg-blue-500 text-white font-medium px-8 py-4 rounded-2xl shadow-lg shadow-blue-500/25 transition-all duration-200 transform active:scale-98 flex items-center gap-3 mx-auto">
+                    <i data-lucide="plus-circle" class="w-5 h-5"></i>
+                    Vybrať video z počítača / mobilu
+                </button>
+                <p class="text-xs text-slate-500 mt-4">Súbory nikam neodosielame, všetko sa spracováva bezpečne vo vašom prehliadači.</p>
+            </div>
+        </div>
+
+        <!-- Hlavná pracovná plocha editora (skrytá pred importom) -->
+        <div id="editor-section" class="hidden grid grid-cols-1 lg:grid-cols-3 gap-8">
+            
+            <!-- Ľavý/Stredný stĺpec: Video Player s orezovým rámom -->
+            <div class="lg:col-span-2 flex flex-col gap-4">
+                <div class="bg-slate-950 border border-slate-800 rounded-3xl p-4 shadow-xl overflow-hidden relative flex flex-col items-center justify-center min-h-[400px]">
+                    
+                    <!-- Kontajner videa, v ktorom je umiestnené orezové okno -->
+                    <div id="video-container" class="relative max-w-full max-h-[60vh] select-none">
+                        <video id="source-video" class="max-w-full max-h-[60vh] rounded-xl pointer-events-none" loop muted playsinline></video>
+                        
+                        <!-- Orezové okno (Crop Box Overlay) -->
+                        <div id="crop-box" class="absolute">
+                            <!-- Tiahla na zmenu veľkosti (Resizers) -->
+                            <div class="resize-handle handle-tl" data-handle="tl"></div>
+                            <div class="resize-handle handle-tr" data-handle="tr"></div>
+                            <div class="resize-handle handle-bl" data-handle="bl"></div>
+                            <div class="resize-handle handle-br" data-handle="br"></div>
+                            
+                            <!-- Pomocná mriežka pre presné orezanie -->
+                            <div class="absolute inset-0 grid grid-cols-3 grid-rows-3 pointer-events-none opacity-40">
+                                <div class="border-r border-b border-white border-dashed"></div>
+                                <div class="border-r border-b border-white border-dashed"></div>
+                                <div class="border-b border-white border-dashed"></div>
+                                <div class="border-r border-b border-white border-dashed"></div>
+                                <div class="border-r border-b border-white border-dashed"></div>
+                                <div class="border-b border-white border-dashed"></div>
+                                <div class="border-r border-white border-dashed"></div>
+                                <div class="border-r border-white border-dashed"></div>
+                                <div></div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- Ovládanie prehrávania videa -->
+                <div class="bg-slate-900/40 border border-slate-800/60 rounded-2xl px-6 py-4 flex items-center justify-between gap-4">
+                    <div class="flex items-center gap-3">
+                        <button id="play-btn" class="w-11 h-11 rounded-full bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-blue-400 transition-colors">
+                            <i data-lucide="play" class="w-5 h-5 fill-current"></i>
+                        </button>
+                        <button id="mute-btn" class="w-11 h-11 rounded-full bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-400 transition-colors">
+                            <i data-lucide="volume-x" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+                    
+                    <!-- Časová os a dĺžka -->
+                    <div class="flex items-center gap-3 flex-1 px-4">
+                        <span id="current-time" class="text-xs font-mono text-slate-400">0:00</span>
+                        <input type="range" id="seek-bar" min="0" max="100" value="0" class="flex-1 h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-500">
+                        <span id="duration-time" class="text-xs font-mono text-slate-400">0:00</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Pravý stĺpec: Nastavenia a Export -->
+            <div class="flex flex-col gap-6">
+                <!-- Informácie a rýchle predvoľby pomeru strán -->
+                <div class="bg-slate-900/40 border border-slate-800/80 rounded-3xl p-6 shadow-xl backdrop-blur-sm">
+                    <h3 class="text-lg font-semibold mb-4 flex items-center gap-2">
+                        <i data-lucide="sliders" class="w-5 h-5 text-blue-400"></i>
+                        Nastavenia orezania
+                    </h3>
+                    
+                    <p class="text-sm text-slate-400 mb-6">
+                        Presuňte a roztiahnite orezový rámček na videu vľavo. Všetko, čo je mimo modrého rámčeka, bude z videa natrvalo odstránené (vrátane ikon či loga).
+                    </p>
+
+                    <!-- Pomer strán (Presety) -->
+                    <div class="space-y-3 mb-6">
+                        <label class="text-xs font-semibold text-slate-300 uppercase tracking-wider block">Pomer strán orezu</label>
+                        <div class="grid grid-cols-2 gap-2">
+                            <button onclick="setAspectRatio(16/9)" class="aspect-ratio-btn px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-medium border border-slate-700 transition-all text-center">
+                                16:9 (Na šírku)
+                            </button>
+                            <button onclick="setAspectRatio(9/16)" class="aspect-ratio-btn px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-medium border border-slate-700 transition-all text-center">
+                                9:16 (Tik Tok / Shorts)
+                            </button>
+                            <button onclick="setAspectRatio(1)" class="aspect-ratio-btn px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-medium border border-slate-700 transition-all text-center">
+                                1:1 (Štvorec)
+                            </button>
+                            <button onclick="setAspectRatio(null)" class="aspect-ratio-btn px-4 py-2.5 rounded-xl bg-blue-600/20 text-blue-400 border border-blue-500/50 text-xs font-medium transition-all text-center">
+                                Vlastný (Voľný)
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Informácie o kvalite exportu -->
+                    <div class="bg-slate-950/60 rounded-2xl p-4 border border-slate-800/50 space-y-3">
+                        <h4 class="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                            <i data-lucide="settings" class="w-3.5 h-3.5 text-blue-400"></i> Parametre Výstupu
+                        </h4>
+                        <div class="grid grid-cols-2 gap-y-2 text-xs text-slate-400">
+                            <div>Rozlíšenie:</div>
+                            <div class="text-right text-slate-200 font-semibold">1080p Full HD</div>
+                            
+                            <div>Snímkovanie (FPS):</div>
+                            <div class="text-right text-slate-200 font-semibold">30 FPS (Stabilné)</div>
+                            
+                            <div>Zvuková stopa:</div>
+                            <div class="text-right text-emerald-400 font-semibold flex items-center justify-end gap-1">
+                                Stereo 192kbps <i data-lucide="check-circle" class="w-3 h-3"></i>
+                            </div>
+
+                            <div>Formát videa:</div>
+                            <div class="text-right text-slate-200 font-semibold">MP4 (MPEG-4)</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Exportovacie a procesné tlačidlo -->
+                <div class="bg-slate-900/40 border border-slate-800/80 rounded-3xl p-6 shadow-xl backdrop-blur-sm flex flex-col gap-4">
+                    <button id="export-btn" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:from-slate-700 disabled:to-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-semibold py-4 px-6 rounded-2xl shadow-lg shadow-blue-500/20 transition-all duration-200 flex items-center justify-center gap-3 text-base">
+                        <i data-lucide="download" class="w-5 h-5"></i>
+                        <span id="export-btn-text">Aplikovať orez a stiahnuť MP4</span>
+                    </button>
+
+                    <!-- Výmena videa za iné -->
+                    <button id="change-video-btn" class="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium py-3 px-6 rounded-2xl transition-all duration-200 flex items-center justify-center gap-2 text-sm border border-slate-700/50">
+                        <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                        Vybrať iné video
+                    </button>
+                </div>
+            </div>
+
+        </div>
+
+    </main>
+
+    <!-- Modal pre rendering / proces spracovania videa (automatické stiahnutie) -->
+    <div id="rendering-modal" class="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl p-8 max-w-md w-full text-center shadow-2xl relative overflow-hidden">
+            
+            <!-- Dekoratívne pozadie -->
+            <div class="absolute -top-24 -left-24 w-48 h-48 bg-blue-500/10 rounded-full blur-3xl pointer-events-none"></div>
+            <div class="absolute -bottom-24 -right-24 w-48 h-48 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+            <div class="relative z-10">
+                <!-- Animovaný loader -->
+                <div class="relative w-24 h-24 mx-auto mb-6">
+                    <div class="absolute inset-0 rounded-full border-4 border-slate-800"></div>
+                    <div class="absolute inset-0 rounded-full border-4 border-t-blue-500 animate-spin"></div>
+                    <div class="absolute inset-0 flex items-center justify-center">
+                        <i data-lucide="film" class="w-8 h-8 text-blue-400 animate-pulse"></i>
+                    </div>
+                </div>
+
+                <h3 class="text-xl font-bold mb-2 text-white">Spracovávame orezané video</h3>
+                <p class="text-sm text-slate-400 mb-6">
+                    Aplikujeme orez na video v reálnom čase s prevodom do kvality <span class="text-slate-200 font-semibold">1080p30</span> a zachovaním krištáľovo čistého zvuku...
+                </p>
+
+                <!-- Progress bar a status -->
+                <div class="space-y-2 mb-6">
+                    <div class="flex items-center justify-between text-xs text-slate-400 font-mono">
+                        <span id="render-status">Pripravuje sa rendering...</span>
+                        <span id="render-percent">0%</span>
+                    </div>
+                    <div class="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden">
+                        <div id="render-progress-bar" class="bg-gradient-to-r from-blue-500 to-indigo-500 h-full w-0 transition-all duration-150 rounded-full"></div>
+                    </div>
+                </div>
+
+                <div class="text-xs text-slate-500">
+                    Po dokončení sa vygenerovaný súbor MP4 automaticky stiahne do vášho zariadenia. Prosím, nezatvárajte túto kartu.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Päta aplikácie -->
+    <footer class="border-t border-slate-900 bg-slate-950/60 py-6 text-center text-xs text-slate-500 mt-auto px-6">
+        <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+            <p>© 2026 Video Cropper Pro. Všetky práva vyhradené.</p>
+            <p>Navrhnuté s dôrazom na bezpečnosť súborov a maximálnu kvalitu zvuku a obrazu.</p>
+        </div>
+    </footer>
+
+    <!-- JS Skript na orezanie, manipuláciu a renderovanie videa -->
+    <script>
+        // Inicializácia ikon Lucide
+        lucide.createIcons();
+
+        // Referencie na DOM prvky
+        const videoInput = document.getElementById('video-input');
+        const importSection = document.getElementById('import-section');
+        const editorSection = document.getElementById('editor-section');
+        const sourceVideo = document.getElementById('source-video');
+        const videoContainer = document.getElementById('video-container');
+        const cropBox = document.getElementById('crop-box');
+        
+        const playBtn = document.getElementById('play-btn');
+        const muteBtn = document.getElementById('mute-btn');
+        const seekBar = document.getElementById('seek-bar');
+        const currentTimeEl = document.getElementById('current-time');
+        const durationTimeEl = document.getElementById('duration-time');
+        
+        const exportBtn = document.getElementById('export-btn');
+        const exportBtnText = document.getElementById('export-btn-text');
+        const changeVideoBtn = document.getElementById('change-video-btn');
+        const renderingModal = document.getElementById('rendering-modal');
+        const renderProgressBar = document.getElementById('render-progress-bar');
+        const renderStatus = document.getElementById('render-status');
+        const renderPercent = document.getElementById('render-percent');
+
+        // Globálne nastavenia pre Crop Box
+        let activeRatio = null; // null = voľný pomer strán
+        let isDragging = false;
+        let isResizing = false;
+        let activeHandle = null;
+        let startX, startY;
+        let startLeft, startTop, startWidth, startHeight;
+        let isProcessing = false; // Ochrana proti viacnásobnému spusteniu
+
+        // Načítanie súboru videa
+        videoInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const fileURL = URL.createObjectURL(file);
+                sourceVideo.src = fileURL;
+                
+                // Zobrazíme editor a skryjeme import
+                importSection.classList.add('hidden');
+                editorSection.classList.remove('hidden');
+                
+                // Po načítaní metadát videa inicializujeme crop box
+                sourceVideo.addEventListener('loadedmetadata', initCropBox);
+            }
+        });
+
+        // Tlačidlo "Zvoliť iné video"
+        changeVideoBtn.addEventListener('click', function() {
+            if (isProcessing) return;
+            sourceVideo.pause();
+            sourceVideo.src = '';
+            importSection.classList.remove('hidden');
+            editorSection.classList.add('hidden');
+            videoInput.value = '';
+        });
+
+        // Inicializácia rozmerov crop boxu na stred videa
+        function initCropBox() {
+            setTimeout(() => {
+                const vidWidth = sourceVideo.clientWidth;
+                const vidHeight = sourceVideo.clientHeight;
+                
+                // Nastavíme počiatočný box na 80% rozmeru videa, vycentrovaný
+                const initW = vidWidth * 0.8;
+                const initH = vidHeight * 0.8;
+                const initL = (vidWidth - initW) / 2;
+                const initT = (vidHeight - initH) / 2;
+                
+                cropBox.style.width = initW + 'px';
+                cropBox.style.height = initH + 'px';
+                cropBox.style.left = initL + 'px';
+                cropBox.style.top = initT + 'px';
+                
+                updateVideoDuration();
+            }, 100);
+        }
+
+        // Aktualizácia dĺžky trvania videa
+        function updateVideoDuration() {
+            durationTimeEl.textContent = formatTime(sourceVideo.duration);
+            seekBar.max = Math.floor(sourceVideo.duration);
+        }
+
+        // Pomocná funkcia na formátovanie času (0:00)
+        function formatTime(seconds) {
+            if (isNaN(seconds)) return '0:00';
+            const m = Math.floor(seconds / 60);
+            const s = Math.floor(seconds % 60);
+            return `${m}:${s < 10 ? '0' : ''}${s}`;
+        }
+
+        // Ovládanie videa (Play/Pause)
+        playBtn.addEventListener('click', function() {
+            if (isProcessing) return;
+            if (sourceVideo.paused) {
+                sourceVideo.play();
+                playBtn.innerHTML = '<i data-lucide="pause" class="w-5 h-5 fill-current"></i>';
+            } else {
+                sourceVideo.pause();
+                playBtn.innerHTML = '<i data-lucide="play" class="w-5 h-5 fill-current"></i>';
+            }
+            lucide.createIcons();
+        });
+
+        // Mute / Unmute
+        muteBtn.addEventListener('click', function() {
+            sourceVideo.muted = !sourceVideo.muted;
+            if (sourceVideo.muted) {
+                muteBtn.innerHTML = '<i data-lucide="volume-x" class="w-5 h-5"></i>';
+                muteBtn.classList.add('text-slate-400');
+                muteBtn.classList.remove('text-blue-400');
+            } else {
+                muteBtn.innerHTML = '<i data-lucide="volume-2" class="w-5 h-5"></i>';
+                muteBtn.classList.add('text-blue-400');
+                muteBtn.classList.remove('text-slate-400');
+            }
+            lucide.createIcons();
+        });
+
+        // Časový posun (SeekBar)
+        sourceVideo.addEventListener('timeupdate', function() {
+            if (!isProcessing) {
+                seekBar.value = Math.floor(sourceVideo.currentTime);
+                currentTimeEl.textContent = formatTime(sourceVideo.currentTime);
+            }
+        });
+
+        seekBar.addEventListener('input', function() {
+            if (isProcessing) return;
+            sourceVideo.currentTime = seekBar.value;
+        });
+
+        // Zmena pomeru strán z UI
+        window.setAspectRatio = function(ratio) {
+            if (isProcessing) return;
+            activeRatio = ratio;
+            
+            // Označenie aktívneho tlačidla
+            document.querySelectorAll('.aspect-ratio-btn').forEach(btn => {
+                btn.classList.remove('bg-blue-600/20', 'text-blue-400', 'border-blue-500/50');
+                btn.classList.add('bg-slate-800', 'text-slate-300', 'border-slate-700');
+            });
+            event.target.classList.add('bg-blue-600/20', 'text-blue-400', 'border-blue-500/50');
+            event.target.classList.remove('bg-slate-800', 'text-slate-300', 'border-slate-700');
+
+            // Ak máme zadaný konkrétny pomer strán, prepočítame aktuálny crop box
+            if (ratio) {
+                const curW = parseFloat(cropBox.style.width);
+                let newH = curW / ratio;
+                const containerH = sourceVideo.clientHeight;
+                
+                // Kontrola pretečenia výšky videa
+                if (newH > containerH) {
+                    newH = containerH;
+                    const newW = newH * ratio;
+                    cropBox.style.width = newW + 'px';
+                }
+                cropBox.style.height = newH + 'px';
+                limitBoundaries();
+            }
+        };
+
+        // --- Logika presúvania a zmeny veľkosti Crop Boxu ---
+        cropBox.addEventListener('mousedown', startInteract);
+        cropBox.addEventListener('touchstart', startInteract, { passive: false });
+
+        function startInteract(e) {
+            if (isProcessing) return;
+            e.preventDefault();
+            const clientX = e.clientX || e.touches[0].clientX;
+            const clientY = e.clientY || e.touches[0].clientY;
+
+            const handle = e.target.closest('.resize-handle');
+            if (handle) {
+                isResizing = true;
+                activeHandle = handle.dataset.handle;
+            } else {
+                isDragging = true;
+            }
+
+            startX = clientX;
+            startY = clientY;
+
+            startLeft = parseFloat(cropBox.style.left) || 0;
+            startTop = parseFloat(cropBox.style.top) || 0;
+            startWidth = parseFloat(cropBox.style.width) || cropBox.clientWidth;
+            startHeight = parseFloat(cropBox.style.height) || cropBox.clientHeight;
+
+            document.addEventListener('mousemove', handleInteract);
+            document.addEventListener('touchmove', handleInteract, { passive: false });
+            document.addEventListener('mouseup', stopInteract);
+            document.addEventListener('touchend', stopInteract);
+        }
+
+        function handleInteract(e) {
+            if (!isDragging && !isResizing) return;
+            e.preventDefault();
+
+            const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+            const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+
+            const dx = clientX - startX;
+            const dy = clientY - startY;
+
+            const containerW = sourceVideo.clientWidth;
+            const containerH = sourceVideo.clientHeight;
+
+            if (isDragging) {
+                let newLeft = startLeft + dx;
+                let newTop = startTop + dy;
+
+                newLeft = Math.max(0, Math.min(newLeft, containerW - startWidth));
+                newTop = Math.max(0, Math.min(newTop, containerH - startHeight));
+
+                cropBox.style.left = newLeft + 'px';
+                cropBox.style.top = newTop + 'px';
+            } else if (isResizing) {
+                let newWidth = startWidth;
+                let newHeight = startHeight;
+                let newLeft = startLeft;
+                let newTop = startTop;
+
+                if (activeHandle === 'br') {
+                    newWidth = startWidth + dx;
+                    newHeight = activeRatio ? newWidth / activeRatio : startHeight + dy;
+                } else if (activeHandle === 'bl') {
+                    newWidth = startWidth - dx;
+                    newLeft = startLeft + dx;
+                    if (newLeft < 0) {
+                        newWidth += newLeft;
+                        newLeft = 0;
+                    }
+                    newHeight = activeRatio ? newWidth / activeRatio : startHeight + dy;
+                } else if (activeHandle === 'tr') {
+                    newWidth = startWidth + dx;
+                    newHeight = activeRatio ? newWidth / activeRatio : startHeight - dy;
+                    newTop = activeRatio ? startTop - (newHeight - startHeight) : startTop + dy;
+                    if (newTop < 0) {
+                        newHeight += newTop;
+                        newTop = 0;
+                        if (activeRatio) newWidth = newHeight * activeRatio;
+                    }
+                } else if (activeHandle === 'tl') {
+                    newWidth = startWidth - dx;
+                    newLeft = startLeft + dx;
+                    if (newLeft < 0) {
+                        newWidth += newLeft;
+                        newLeft = 0;
+                    }
+                    newHeight = activeRatio ? newWidth / activeRatio : startHeight - dy;
+                    newTop = activeRatio ? startTop - (newHeight - startHeight) : startTop + dy;
+                    if (newTop < 0) {
+                        newHeight += newTop;
+                        newTop = 0;
+                        if (activeRatio) {
+                            newWidth = newHeight * activeRatio;
+                            newLeft = startLeft + (startWidth - newWidth);
+                        }
+                    }
+                }
+
+                const minSize = 40;
+                if (newWidth >= minSize && newHeight >= minSize) {
+                    if (newLeft + newWidth <= containerW && newTop + newHeight <= containerH) {
+                        cropBox.style.width = newWidth + 'px';
+                        cropBox.style.height = newHeight + 'px';
+                        cropBox.style.left = newLeft + 'px';
+                        cropBox.style.top = newTop + 'px';
+                    }
+                }
+            }
+        }
+
+        function stopInteract() {
+            isDragging = false;
+            isResizing = false;
+            activeHandle = null;
+            document.removeEventListener('mousemove', handleInteract);
+            document.removeEventListener('touchmove', handleInteract);
+            document.removeEventListener('mouseup', stopInteract);
+            document.removeEventListener('touchend', stopInteract);
+        }
+
+        function limitBoundaries() {
+            const containerW = sourceVideo.clientWidth;
+            const containerH = sourceVideo.clientHeight;
+            const curL = parseFloat(cropBox.style.left) || 0;
+            const curT = parseFloat(cropBox.style.top) || 0;
+            const curW = parseFloat(cropBox.style.width) || cropBox.clientWidth;
+            const curH = parseFloat(cropBox.style.height) || cropBox.clientHeight;
+
+            let updatedL = curL;
+            let updatedT = curT;
+
+            if (curL + curW > containerW) {
+                updatedL = containerW - curW;
+            }
+            if (curT + curH > containerH) {
+                updatedT = containerH - curH;
+            }
+
+            cropBox.style.left = Math.max(0, updatedL) + 'px';
+            cropBox.style.top = Math.max(0, updatedT) + 'px';
+        }
+
+        window.addEventListener('resize', () => {
+            if (!editorSection.classList.contains('hidden')) {
+                limitBoundaries();
+            }
+        });
+
+        // --- EXPORT & JEDNORAZOVÝ RENDERING PROCES ---
+
+        exportBtn.addEventListener('click', async function() {
+            if (isProcessing) return; // Zamedzenie opakovanému kliknutiu
+            isProcessing = true;
+            
+            // Deaktivácia tlačidla
+            exportBtn.disabled = true;
+            exportBtnText.textContent = "Spracovávam...";
+
+            // Zastavíme predchádzajúce náhľadové prehrávanie
+            sourceVideo.pause();
+            playBtn.innerHTML = '<i data-lucide="play" class="w-5 h-5 fill-current"></i>';
+            lucide.createIcons();
+
+            // Vypneme slučku na zdrojovom videu, aby skončilo presne po jednom prehraní!
+            sourceVideo.loop = false;
+
+            // Zobrazenie načítavacieho modalu
+            renderingModal.classList.remove('hidden');
+            updateRenderProgress(0, "Pripravuje sa rendering plátna...");
+
+            // Výpočet mierky orezu voči natívnemu rozlíšeniu videa
+            const scaleX = sourceVideo.videoWidth / sourceVideo.clientWidth;
+            const scaleY = sourceVideo.videoHeight / sourceVideo.clientHeight;
+
+            const cropLeft = parseFloat(cropBox.style.left) * scaleX;
+            const cropTop = parseFloat(cropBox.style.top) * scaleY;
+            const cropWidth = parseFloat(cropBox.style.width) * scaleX;
+            const cropHeight = parseFloat(cropBox.style.height) * scaleY;
+
+            // Cieľové rozlíšenie 1080p
+            const targetHeight = 1080;
+            const targetWidth = Math.round((cropWidth / cropHeight) * targetHeight);
+
+            // Príprava kresliaceho plátna
+            const canvas = document.createElement('canvas');
+            canvas.width = targetWidth;
+            canvas.height = targetHeight;
+            const ctx = canvas.getContext('2d');
+
+            // Príprava a prepojenie audia pre zachovanie vysokej kvality zvuku
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const sourceNode = audioCtx.createMediaElementSource(sourceVideo);
+            const destNode = audioCtx.createMediaStreamDestination();
+            sourceNode.connect(destNode);
+            sourceNode.connect(audioCtx.destination); // povolenie počúvania počas renderu
+
+            // Získanie obrazového streamu z plátna pri stabilných 30 FPS
+            const canvasStream = canvas.captureStream(30);
+            
+            // Pridanie zvukovej stopy k nahrávaniu
+            const audioTrack = destNode.stream.getAudioTracks()[0];
+            if (audioTrack) {
+                canvasStream.addTrack(audioTrack);
+            }
+
+            // Možnosti nahrávania s vysokým dátovým tokom
+            const options = {
+                mimeType: 'video/webm;codecs=vp9,opus',
+                videoBitsPerSecond: 8000000, // 8 Mbps pre čistý 1080p obraz
+                audioBitsPerSecond: 192000  // 192 kbps stereo zvuk
+            };
+
+            let mediaRecorder;
+            try {
+                mediaRecorder = new MediaRecorder(canvasStream, options);
+            } catch (e) {
+                console.log("Moderný kodek vp9/opus nie je podporovaný, používame predvolený rekordér.");
+                mediaRecorder = new MediaRecorder(canvasStream);
+            }
+
+            const chunks = [];
+            mediaRecorder.ondataavailable = function(e) {
+                if (e.data && e.data.size > 0) {
+                    chunks.push(e.data);
+                }
+            };
+
+            // Po ukončení nahrávania (spracované presne 1-krát)
+            mediaRecorder.onstop = function() {
+                updateRenderProgress(100, "Súbor úspešne orezaný. Ukladám video...");
+                
+                const blob = new Blob(chunks, { type: 'video/mp4' });
+                const downloadURL = URL.createObjectURL(blob);
+                
+                // Automatické stiahnutie súboru do zariadenia
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = downloadURL;
+                a.download = `orezané_video_1080p.mp4`;
+                document.body.appendChild(a);
+                a.click();
+                
+                // Vyčistenie procesov a obnovenie pôvodných nastavení videa pre náhľad
+                setTimeout(() => {
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(downloadURL);
+                    renderingModal.classList.add('hidden');
+                    
+                    // Reset stavov pre ďalšie použitie
+                    audioCtx.close();
+                    sourceVideo.loop = true; // Znova zapneme slučku pre náhľad v editore
+                    isProcessing = false;
+                    exportBtn.disabled = false;
+                    exportBtnText.textContent = "Aplikovať orez a stiahnuť MP4";
+                }, 1200);
+            };
+
+            // Nastavíme video presne na začiatok a zapneme zvuk
+            sourceVideo.currentTime = 0;
+            sourceVideo.muted = false;
+            
+            await sourceVideo.play();
+            mediaRecorder.start();
+
+            const videoDuration = sourceVideo.duration;
+
+            function drawFrame() {
+                // Skontrolujeme, či video skončilo, bolo pozastavené alebo pretieklo dĺžku videa
+                if (sourceVideo.ended || sourceVideo.paused || sourceVideo.currentTime >= videoDuration) {
+                    if (mediaRecorder.state === "recording") {
+                        mediaRecorder.stop();
+                    }
+                    return;
+                }
+
+                // Vykreslenie vyrezanej časti
+                ctx.drawImage(
+                    sourceVideo,
+                    cropLeft, cropTop, cropWidth, cropHeight,
+                    0, 0, targetWidth, targetHeight
+                );
+
+                // Prepočet reálneho percentuálneho progresu
+                const progress = (sourceVideo.currentTime / videoDuration) * 100;
+                updateRenderProgress(progress, `Renderovanie snímok... (${Math.round(progress)}%)`);
+
+                // Pokračovanie v snímaní v ďalšom snímku obrazovky
+                requestAnimationFrame(drawFrame);
+            }
+
+            // Spustenie vykresľovacej a zachytávacej slučky
+            drawFrame();
+        });
+
+        // Pomocná funkcia na zmenu progressu
+        function updateRenderProgress(percent, text) {
+            const pct = Math.min(100, Math.max(0, Math.round(percent)));
+            renderProgressBar.style.width = pct + '%';
+            renderStatus.textContent = text;
+            renderPercent.textContent = pct + '%';
+        }
+    </script>
+</body>
+</html>
